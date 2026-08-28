@@ -1,17 +1,34 @@
-# Large Media & Cache Folders (Do not track in git)
+# ==============================================================================
+# DATASET & GENERATED DATA (Do not push to GitHub)
+# ==============================================================================
+# Raw Media, Keyframes & Videos
+data/
 selected-frames/
 resized-videos/
 thumbnails/
 videos/
-features-clip-openai/
+features-*/
+
+# Extracted OCR & Generated Ingestion Documents
+ocr-results/
+lucene-documents/
 backup-before-full/
+
+# Index Binaries, ID Maps & Cache Files
+faiss-index_*.faiss
+faiss-idmap_*.txt
+lucene-index/
+field-cache.dat
+hypersets.csv
+aic-visione-frame-map.csv
+aic-visione-convert-manifest.csv
+aic-video-ids.txt
+asset_token
 *.log
 
-# Large Index Binaries (>100MB, rebuild via Docker or transfer via Drive)
-faiss-index_clip-openai.faiss
-lucene-index/
-
-# Python & Environment
+# ==============================================================================
+# PYTHON & ENVIRONMENT
+# ==============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,7 +36,9 @@ __pycache__/
 .venv*/
 .env
 
-# System & IDE
+# ==============================================================================
+# SYSTEM & IDE
+# ==============================================================================
 .DS_Store
 Thumbs.db
 .idea/
