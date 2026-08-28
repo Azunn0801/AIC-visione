@@ -1,30 +1,18 @@
 # ==============================================================================
-# DATASET & GENERATED DATA (Do not push to GitHub)
+# LARGE RAW MEDIA & CACHE (Do not push to GitHub)
 # ==============================================================================
-# Raw Media, Keyframes & Videos
 data/
 selected-frames/
 resized-videos/
 thumbnails/
 videos/
 features-*/
-
-# Extracted OCR & Generated Ingestion Documents
-ocr-results/
-lucene-documents/
 backup-before-full/
-
-# Index Binaries, ID Maps & Cache Files
-faiss-index_*.faiss
-faiss-idmap_*.txt
-lucene-index/
-field-cache.dat
-hypersets.csv
-aic-visione-frame-map.csv
-aic-visione-convert-manifest.csv
-aic-video-ids.txt
-asset_token
 *.log
+
+# Large Binaries exceeding GitHub 100MB limit (rebuild via Docker in 30s)
+faiss-index_*.faiss
+lucene-index/
 
 # ==============================================================================
 # PYTHON & ENVIRONMENT
