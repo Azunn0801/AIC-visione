@@ -1,0 +1,10 @@
+diff --git visione/services/index/faiss-index-manager/requirements.txt visione/services/index/faiss-index-manager/requirements.txt
+index 0000000..0000000 100644
+--- visione/services/index/faiss-index-manager/requirements.txt
++++ visione/services/index/faiss-index-manager/requirements.txt
+@@ -1,4 +1,5 @@
+ faiss-cpu==1.7.3
++numpy==1.23.5
+ flask==2.2.3
+ Werkzeug>=2.2,<3.0
+ h5py

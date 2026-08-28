@@ -1,0 +1,113 @@
+#
+# \ \     /_)       _)
+#  \ \   /  |   __|  |   _ \   __ \    _ \
+#   \ \ /   | \__ \  |  (   |  |   |   __/
+#    \_/   _| ____/ _| \___/  _|  _| \___|  Configuration File
+#
+# This file contains the configuration for this VISIONE collection.
+
+
+main:
+  # Label for this collection (optional).
+  collection_name: null
+
+  # Server name to which this instance will respond. You can specify a list
+  # space-separated domain names or IP addresses.
+  server_name: localhost
+
+  # Port to which this instance will bind.
+  port: 8000
+
+  # Set to true to enable the development mode. In this mode, the code of
+  # services of editable installs will be mounted to docker containers, allowing
+  # for live code changes.
+  develop_mode: false
+
+  # (DEPRECATED) Access credentials for the internal tomcat server.
+  username: admin
+  password: visione
+
+# This section contains URL overrides for the directories where the static files
+# are stored. You can modify these URLs to point to an external server, or set
+# them to 'null' to serve the files locally from the collection directory.
+static_files_urls:
+  videos_url:         null  # URL to which 'videos/...' requests will be redirected.
+  resized_videos_url: null  # URL to which 'videos/(medium|tiny)/...' requests will be redirected.
+  frames_url:         null  # URL to which 'frames/...' requests will be redirected.
+  resized_frames_url: null  # URL to which 'frames/(medium|tiny)/...' requests will be redirected.
+  palette_url:        null  # URL to which 'palette/...' requests will be redirected.
+
+# This section contains URL overides for the backend services. You can modify
+# these URLS to point to externally hosted services, or set them to 'null' to
+# use the locally hosted services.
+services_urls:
+  translate_url: null  # URL to which 'translate' requests will be redirected.
+
+# This section contains the configuration for the search service.
+core:
+  # The defautl number of results to return in searches if not specified
+  # otherwise.
+  K: 10000
+
+  ## Advanced stuff, don't touch unless you know what you're doing. Commented
+  ## values are the default ones. Uncomment and change them if you want to
+  ## override them.
+
+  #-------PATH SETTINGS-------# index_path: /data/lucene-index  # LUCENE
+  # save_logs: false  # SAVE_LOGS
+  # log_path: /data/logs  # LOG_FOLDER
+  # log_dres_path: /data/logs_dres  # LOG_FOLDER_DRES
+
+  #-------QUERY & FIELDS SETTINGS-------#
+  # OBJECTS: {"field":"objects", "similarity":"DotProduct", "weight":"1.0"}
+  # BB: {"field":"txt", "similarity":"CosineSimilarity", "weight":"1.0"}
+  # ALADIN: {"field":"aladin", "similarity":"DotProduct", "weight":"0.00005"}
+  # CLIP: {"field":"clip", "similarity":"CosineSimilarity", "weight":"1.0"}
+  # IMG_SIM: {"field":"features", "similarity":"DotProduct", "weight":"1.0"}
+  #
+  # RESCORER_PIPELINE: [OBJECTS, ALADIN, BB]
+
+
+# This section contains the configuration for the analysis stage ('visione
+# analyze' commands).
+analysis:
+  # Không chạy lại detector vì objects đã có từ BTC.
+  object_detectors: {}
+
+  # Chỉ giữ feature type để VisioNe biết service text query cần dùng.
+  # Không gọi `visione analyze`, nên nó sẽ không trích xuất lại ảnh.
+  features:
+    clip-openai: {}
+
+
+
+# This section contains the configuration for the indexing stage ('visione
+# index' commands).
+index:
+  objects: {}
+  features:
+    clip-openai:
+      index_engine: faiss
+      index_type: Flat
+
+
+# This section contains the configuration for the user interface.
+ui:
+  max-results-per-video: 10
+  textual-modes:
+    - {name: "AIC CLIP ViT-B/32", mode: "clip-openai"}
+    - {name: "Media Info", mode: "metadata"}
+  objects:
+    palette: []
+
+# This section contains the configuration for the DRES submission service
+# (https://github.com/dres-dev/DRES) when VISIONE is used as a DRES client. It
+# is used only during competitions and is not needed for normal VISIONE
+# operation.
+dres:
+  endpoint: http://router/dres  # SUBMIT_SERVER=http://router/dres
+  username: visione  # SUBMIT_USER
+  password: visione  # SUBMIT_PWD
+  member_id: visione  # MEMBER_ID
+  send_logs: false  # SEND_LOG_TO_DRES
+  # SUBMIT_SERVICE=submit  (deprecated)

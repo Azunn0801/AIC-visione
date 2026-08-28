@@ -1,0 +1,30 @@
+--- visione/cli/commands/command.py	2026-08-17 04:56:03.081804364 +0000
++++ visione/cli/commands/command.py.patched	2026-08-19 12:49:33.638339266 +0000
+@@ -53,6 +53,11 @@
+             'VISIONE_CACHE': self.cache_dir,
+         }
+ 
++        # Preserve Docker client settings for every Compose subprocess.
++        for env_name in ('DOCKER_CONFIG', 'DOCKER_CONTEXT', 'DOCKER_HOST', 'PATH'):
++            if env_name in os.environ:
++                self.compose_env[env_name] = os.environ[env_name]
++
+         self.develop_mode = self.config['main'].get('develop_mode', False)
+         self.verbose = verbose
+ 
+@@ -76,7 +81,7 @@
+         elif compose_v1:
+             compose_executable = ['docker-compose']
+         else:
+-            raise RuntimeError("Docker Compose not found. Install the 'docker-compose' executable or upgrade docker to a version that ships the 'compose' subcommand.")
++            raise RuntimeError("Docker Compose not found. Install the 'docker-compose' executable or upgrade docker to a version that ships with the 'compose' subcommand.")
+ 
+         compose_files = [
+             '--file', str(self.compose_dir / 'docker-compose.yaml'),
+@@ -211,4 +216,4 @@
+ 
+             if self.verbose:
+                 print(line, end='', **kwargs)
+-        return _func
+\ No newline at end of file
++        return _func

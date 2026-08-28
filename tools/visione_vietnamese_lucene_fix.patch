@@ -1,0 +1,366 @@
+diff --git a/visione/services/core/src/main/java/it/cnr/isti/visione/lucene/LucTextSearch.java b/visione/services/core/src/main/java/it/cnr/isti/visione/lucene/LucTextSearch.java
+index 092968c..8f07862 100644
+--- a/visione/services/core/src/main/java/it/cnr/isti/visione/lucene/LucTextSearch.java
++++ b/visione/services/core/src/main/java/it/cnr/isti/visione/lucene/LucTextSearch.java
+@@ -28,6 +28,7 @@ import org.apache.lucene.index.Terms;
+ import org.apache.lucene.index.TermsEnum;
+ import org.apache.lucene.queryparser.classic.ParseException;
+ import org.apache.lucene.queryparser.classic.QueryParser;
++import org.apache.lucene.search.BooleanClause;
+ import org.apache.lucene.search.BooleanQuery;
+ import org.apache.lucene.search.IndexSearcher;
+ import org.apache.lucene.search.Query;
+@@ -227,6 +228,75 @@ public class LucTextSearch {
+ 		return topDocs2SearchResults(hits, k);
+ 	}
+ 
++		public static String normalizeVietnamese(String text) {
++		if (text == null) return "";
++		String s = text.toLowerCase(java.util.Locale.ROOT)
++				.replace('đ', 'd')
++				.replace('Đ', 'd');
++		s = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKD);
++		s = s.replaceAll("\\p{M}", "");
++		// Replace non-alphanumeric with space
++		s = s.replaceAll("[^a-z0-9\\s]", " ");
++		return s.trim();
++	}
++
++	/** Search media-info metadata and return normal VisioNe frame results. */
++	public SearchResults[] searchMetadata(String textQuery, int k) throws IOException {
++		String value = textQuery == null ? "" : textQuery.trim();
++		if (value.isEmpty())
++			return new SearchResults[0];
++
++		// Mojibake self-healing fallback
++		if (value.contains("Ã") || value.contains("Â") || value.contains("á»") || value.contains("Ä")) {
++			try {
++				value = new String(value.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1), java.nio.charset.StandardCharsets.UTF_8);
++			} catch (Exception ignored) {}
++		}
++
++		String clean = normalizeVietnamese(value);
++		String[] terms = clean.split("\\s+");
++		List<String> validTerms = new ArrayList<>();
++		for (String t : terms) {
++			if (!t.trim().isEmpty()) {
++				validTerms.add(t.trim());
++			}
++		}
++		if (validTerms.isEmpty())
++			return new SearchResults[0];
++
++		BooleanQuery.Builder mainBuilder = new BooleanQuery.Builder();
++		BooleanClause.Occur termOccur = (validTerms.size() <= 2)
++				? BooleanClause.Occur.MUST
++				: BooleanClause.Occur.SHOULD;
++
++		for (String term : validTerms) {
++			BooleanQuery.Builder termOr = new BooleanQuery.Builder();
++			termOr.add(new TermQuery(new Term(Fields.MEDIA_INFO_NORM, term)), BooleanClause.Occur.SHOULD);
++			if (term.contains("d")) {
++				termOr.add(new TermQuery(new Term(Fields.MEDIA_INFO_NORM, term.replace('d', 'đ'))), BooleanClause.Occur.SHOULD);
++			}
++			mainBuilder.add(termOr.build(), termOccur);
++		}
++
++		TopDocs hits = s.search(mainBuilder.build(), k);
++
++		// Fallback: If MUST returned 0 results for 2-word query, try SHOULD
++		if (hits.totalHits == 0 && validTerms.size() <= 2 && validTerms.size() > 1) {
++			BooleanQuery.Builder fallbackBuilder = new BooleanQuery.Builder();
++			for (String term : validTerms) {
++				BooleanQuery.Builder termOr = new BooleanQuery.Builder();
++				termOr.add(new TermQuery(new Term(Fields.MEDIA_INFO_NORM, term)), BooleanClause.Occur.SHOULD);
++				if (term.contains("d")) {
++					termOr.add(new TermQuery(new Term(Fields.MEDIA_INFO_NORM, term.replace('d', 'đ'))), BooleanClause.Occur.SHOULD);
++				}
++				fallbackBuilder.add(termOr.build(), BooleanClause.Occur.SHOULD);
++			}
++			hits = s.search(fallbackBuilder.build(), k);
++		}
++
++		return topDocs2SearchResults(hits, k);
++	}
++
+ 	private TopDocs topDocsClone(TopDocs topdocs, int maxRes) {
+ 		ScoreDoc[] scoreDocs = topdocs.scoreDocs;
+ 		ScoreDoc[] scoreDocsClone = new ScoreDoc[Math.min(scoreDocs.length, maxRes)];
+diff --git a/visione/services/core/src/main/java/it/cnr/isti/visione/services/VBSService.java b/visione/services/core/src/main/java/it/cnr/isti/visione/services/VBSService.java
+index 047ee6c..eecd1dd 100644
+--- a/visione/services/core/src/main/java/it/cnr/isti/visione/services/VBSService.java
++++ b/visione/services/core/src/main/java/it/cnr/isti/visione/services/VBSService.java
+@@ -148,8 +148,8 @@ public class VBSService {
+ 
+ 	@POST
+ 	@Path("/search")
+-	@Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+-	@Produces(MediaType.TEXT_PLAIN)
++	@Consumes({MediaType.APPLICATION_FORM_URLENCODED, "application/x-www-form-urlencoded;charset=UTF-8"})
++	@Produces(MediaType.TEXT_PLAIN + ";charset=UTF-8")
+ 	public String search(
+ 			@FormParam("query") String query,
+ 			@DefaultValue("-1") @FormParam("k") int k,
+@@ -158,7 +158,15 @@ public class VBSService {
+ 			@DefaultValue("true") @FormParam("sortbyvideo") boolean sortByVideo,
+ 			@DefaultValue("1500") @FormParam("maxres") int maxRes,
+ 			@DefaultValue("lucia") @FormParam("fusion") String fusionMode) {
+-		System.out.println(new Date() + " - " + httpServletRequest.getRemoteAddr() + " - " + query.substring(0, Math.min(100, query.length())));
++		try {
++			httpServletRequest.setCharacterEncoding("UTF-8");
++		} catch (Exception ignored) {}
++		if (query != null && (query.contains("Ã") || query.contains("Â") || query.contains("á»") || query.contains("Ä"))) {
++			try {
++				query = new String(query.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1), java.nio.charset.StandardCharsets.UTF_8);
++			} catch (Exception ignored) {}
++		}
++		System.out.println(new Date() + " - " + httpServletRequest.getRemoteAddr() + " - " + (query != null ? query.substring(0, Math.min(100, query.length())) : "null"));
+ 		String response = "";
+ 		if (k == -1)
+ 			k = Settings.K;
+@@ -184,25 +192,11 @@ public class VBSService {
+ 			try {
+ 				if (queryObj.getQuery().containsKey("comboVisualSim")) {
+ 					String queryId = queryObj.getQuery().get("comboVisualSim");
+-					TopDocs topDocsToReorder = searcher.searchResults2TopDocs(hitsToReorder);
+-					List<Callable<SearchResults[]>> searches = new ArrayList<>(3);
+-
+-					searches.add(new InternalSearch("dinov2", searcher).setQueryByID(queryId, k, topDocsToReorder));
+-					searches.add(new InternalSearch("aladin", searcher).setQueryByID(queryId, k, topDocsToReorder));
+-					searches.add(new ExternalSearch("clip2video").setQueryByID(queryId, k));
+-
+-					ExecutorService executor = Executors.newFixedThreadPool(searches.size());
+-					List<Future<SearchResults[]>> futures = executor.invokeAll(searches);
+-
+-					// gather results as SearchResults[]
+-					List<SearchResults[]> hits = futures.stream().map(f -> {
+-						try { return f.get(); } catch (InterruptedException | ExecutionException e) {
+-							e.printStackTrace();
+-							return null;
+-						}
+-					}).collect(Collectors.toList());
+-
+-					SearchResults[] searchResults = searcher.mergeResults(hits, k, false, fusionMode);
++					// AIC has only the BTC-supplied CLIP ViT-B/32 index.
++					// Stock VisioNe's combo path calls dinov2/aladin/clip2video,
++					// which are disabled in the CPU-first AIC configuration.
++					// Query FAISS directly by the VisioNe imgID instead.
++					SearchResults[] searchResults = new ExternalSearch("clip-openai").searchByID(queryId, k);
+ 
+ 					log(searchResults, query, logQueries); // logging query and search results
+ 
+@@ -212,6 +206,22 @@ public class VBSService {
+ 						searchResults = Arrays.copyOfRange(searchResults, 0, Math.min(searchResults.length, maxRes));
+ 
+ 					return gson.toJson(searchResults);
++					} else if ("metadata".equals(queryObj.getParameters().get("textualMode"))
++							&& (queryObj.getQuery().containsKey("textual")
++								|| queryObj.getQuery().containsKey("metadata"))) {
++						String metadataQuery = queryObj.getQuery().containsKey("metadata")
++								? queryObj.getQuery().get("metadata")
++								: queryObj.getQuery().get("textual");
++
++						SearchResults[] searchResults = searcher.searchMetadata(metadataQuery, k);
++						lastHits = searchResults;
++						log(searchResults, query, logQueries);
++						if (sortByVideo)
++							searchResults = searcher.sortByVideo(searchResults, n_frames_per_row, maxRes);
++						else
++							searchResults = Arrays.copyOfRange(searchResults, 0,
++									Math.min(searchResults.length, maxRes));
++    				return gson.toJson(searchResults);
+ 				} else if (queryObj.getQuery().containsKey("vf")) {
+ 					String queryId = queryObj.getQuery().get("vf");
+ 					TopDocs topDocsToReorder = searcher.searchResults2TopDocs(hitsToReorder);
+@@ -291,6 +301,19 @@ public class VBSService {
+ 						String textualMode = queryObj.getParameters().get("textualMode");
+ 						System.out.println("textualMode: " + textualMode);
+ 
++						// The UI sends metadata as query.textual plus parameter textualMode=metadata.
++						// Handle it before the generic ExternalSearch(textualMode) fallback.
++						if ("metadata".equals(textualMode)) {
++							SearchResults[] searchResults = searcher.searchMetadata(textQuery, k);
++							lastHits = searchResults;
++							log(searchResults, query, logQueries);
++							if (sortByVideo)
++								searchResults = searcher.sortByVideo(searchResults, n_frames_per_row, maxRes);
++							else
++								searchResults = Arrays.copyOfRange(searchResults, 0, Math.min(searchResults.length, maxRes));
++							return gson.toJson(searchResults);
++						}
++
+ 						long elapsed = -System.currentTimeMillis();
+ 						List<Callable<SearchResults[]>> searches = new ArrayList<>();
+ 
+diff --git a/visione/services/core/src/main/webapp/WEB-INF/web.xml b/visione/services/core/src/main/webapp/WEB-INF/web.xml
+index 3f6db13..93cfc2e 100644
+--- a/visione/services/core/src/main/webapp/WEB-INF/web.xml
++++ b/visione/services/core/src/main/webapp/WEB-INF/web.xml
+@@ -20,7 +20,25 @@
+     <welcome-file>index.html</welcome-file>
+   </welcome-file-list>
+   
+-  <filter>
++    <filter>
++    <filter-name>CharacterEncodingFilter</filter-name>
++    <filter-class>org.apache.catalina.filters.SetCharacterEncodingFilter</filter-class>
++    <init-param>
++      <param-name>encoding</param-name>
++      <param-value>UTF-8</param-value>
++    </init-param>
++    <init-param>
++      <param-name>ignore</param-name>
++      <param-value>false</param-value>
++    </init-param>
++  </filter>
++
++  <filter-mapping>
++    <filter-name>CharacterEncodingFilter</filter-name>
++    <url-pattern>/*</url-pattern>
++  </filter-mapping>
++
++<filter>
+     <filter-name>CorsFilter</filter-name>
+     <filter-class>org.apache.catalina.filters.CorsFilter</filter-class>
+     <init-param>
+diff --git a/visione/services/web-ui/js/visione.js b/visione/services/web-ui/js/visione.js
+index 83f244a..4620871 100644
+--- a/visione/services/web-ui/js/visione.js
++++ b/visione/services/web-ui/js/visione.js
+@@ -445,11 +445,14 @@ function cell2Text(idx) {
+ 	let textual = '';
+ 	element = $("#textual" + idx);
+ 	if (element.length > 0) {
+-		textual = element.val().trim().replace(/[^\x21-\x7E]+/g, ' ');
++		textual = element.val().trim().replace(/(\r\n|\n|\r)/gm, ' ');
+ 	}
+ 
+ 	if (textual != '') {
+-		queryObj.textual = textual;
++		if (textualMode[idx] === "metadata")
++			queryObj.metadata = textual;
++		else
++			queryObj.textual = textual;
+ 		queryParameters['textualMode'] = textualMode[idx];
+ 	}
+ 
+@@ -637,6 +640,7 @@ function search2(query) {
+ 			$.ajax({
+ 				type: "POST",
+ 				async: true,
++				contentType: "application/x-www-form-urlencoded; charset=UTF-8",
+ 				data: { query: query, simreorder: simreorder, n_frames_per_row: numResultsPerVideo },
+ 				dataType: "text",
+ 				url: urlVBSService + "/search",
+@@ -772,8 +776,8 @@ function setTextualMode(checkboxId, mode) {
+ 	tmp = $("#textual" + checkboxId);
+ 	textQuery = $("#textual" + checkboxId).val();
+ 	if (textQuery.length > 0) {
+-		if (document.getElementById("isTranslate" + checkboxId).checked)
+-			translateText(textQuery, 0);
++		if (document.getElementById("isTranslate" + checkboxId).checked && textualMode[checkboxId] !== "metadata")
++			translateText(textQuery, checkboxId);
+ 		searchByForm();
+ 	}
+ }
+@@ -974,6 +978,9 @@ function showResults(data) {
+ 					resrowIdx = 0;
+ 					visibleImages = 0;
+ 					loadImages(0, batchSize);
++					if (typeof SubmissionQueue !== 'undefined') {
++						SubmissionQueue.onSearchResults(res);
++					}
+ 				}
+ 			} catch (e){
+ 				console.log(e);
+@@ -1057,7 +1064,7 @@ function loadImages(startIndex, endIndex) {
+ 		let thumbnailPath = thumbnailUrl + path + ".jpg";
+ 		keyframePath = keyFramesUrl + path + ".png";
+ 		//avsObj = getAvsObj(videoId, imgId, 'avs_' + imgId, thumbnailPath, keyframePath, resrowIdx, resColIdx - 1)
+-		resultData = getResultData(videoId, imgId, thumbnailPath, imgId, frameNumber, keyframePath, score, videoUrl, videoUrlPreview, resrowIdx, resColIdx - 1)
++		resultData = getResultData(videoId, imgId, thumbnailPath, imgId, frameNumber, keyframePath, score, videoUrl, videoUrlPreview, resrowIdx, resColIdx - 1, (res[i] && res[i].middleFrame !== undefined ? res[i].middleFrame : null))
+ 
+ 		if (resColIdx > 0 && (resColIdx+newLine) % 11 == 0) {
+ 			imgGridResults += '<div class="item column-span-1"></div>';
+@@ -1076,6 +1083,9 @@ function loadImages(startIndex, endIndex) {
+ 	}
+ 
+ 	resultsVisualization();
++	if (typeof SubmissionQueue !== 'undefined') {
++		SubmissionQueue.updateGridBadges();
++	}
+ 
+ 	for (var i = startIndex; i < visibleImages; i++) {
+ 		let imgId = res[i].imgId;
+@@ -1141,7 +1151,7 @@ function loadImages(startIndex, endIndex) {
+ }
+ 
+ 
+-function getResultData(videoId, imgId, thumb, frameName, frameNumber, keyframePath, score, videoUrl, videoUrlPreview, rowIdx, colIdx) {
++function getResultData(videoId, imgId, thumb, frameName, frameNumber, keyframePath, score, videoUrl, videoUrlPreview, rowIdx, colIdx, middleFrame = null) {
+ 	let resultData = new Object();
+ 	resultData.videoId = videoId;
+ 	resultData.imgId = imgId;
+@@ -1155,6 +1165,7 @@ function getResultData(videoId, imgId, thumb, frameName, frameNumber, keyframePa
+ 	resultData.videoUrlPreview = videoUrlPreview;
+ 	resultData.rowIdx = rowIdx;
+ 	resultData.colIdx = colIdx;
++	resultData.middleFrame = middleFrame;
+ 	return resultData
+ }
+ 
+@@ -1192,7 +1203,9 @@ function setTaskType(taskType) {
+ 	localStorage.setItem('taskType', sessionStorage.getItem('taskType'));
+ 	$('input[name="option"][value="' + getTaskType() + '"]').prop('checked', true);
+ 	$('#taskTypeLabel').text(getTaskType().toUpperCase() );
+-
++	if (typeof SubmissionQueue !== 'undefined') {
++		SubmissionQueue.setTaskType(getTaskType() === 'avs' ? 'kis' : getTaskType());
++	}
+ }
+ 
+ function submitResult(id, videoId, textAnswer=null, isAsync=false) {
+@@ -1284,6 +1297,7 @@ function hideOverlay(img_overlay) {
+ 
+ const imgResult = (res, borderColor, img_loading="eager") => {
+ 		jsonString = JSON.stringify(res);
++		let fIdx = (res.middleFrame !== undefined && res.middleFrame !== null) ? res.middleFrame : (parseInt(res.frameNumber) || 0);
+ 		return `
+ 		<div class="result-border" style="border-color: ${borderColor};">
+ 			<div class="myimg-thumbnail"  id="${res.imgId}" lang="${res.videoId}|${res.videoUrlPreview}" >
+@@ -1295,11 +1309,15 @@ const imgResult = (res, borderColor, img_loading="eager") => {
+ 				<a href="#" title="Play Video"><i title="Play Video" class="fa fa-play font-normal" style="color:#007bff;padding-left: 3px;" onclick="playVideoWindow('${res.videoUrl}', '${res.videoId}', '${res.imgId}'); return false;"></i></a>
+ 				<a href="#" class="isSimplified" title="image similarity"><img loading="${img_loading}" style="padding: 2px;" src="img/comboSim.svg" width=20 title="image similarity" alt="${res.imgId}" id="comboSim${res.imgId}" onclick="var queryObj=new Object(); queryObj.comboVisualSim='${res.imgId}'; searchByLink(queryObj); return false;"></a>
+ 				<a href="#" class="isAdvanced" title="Visual similarity"><img loading="${img_loading}" style="padding: 2px;" src="img/imgSim.png" width=20 title="Visual similarity (dinov2)" alt="${res.imgId}" id="gemSim${res.imgId}" onclick="var queryObj=new Object(); queryObj.vf='${res.imgId}'; searchByLink(queryObj); return false;"></a>
+-				<a href="#" class="isAdvanced" title="semantic similarity""><img loading="${img_loading}" style="padding: 2px;" src="img/aladinSim.svg" width=20 title="semantic similarity" alt="${res.imgId}" id="aladinSim${res.imgId}" onclick="var queryObj=new Object(); queryObj.aladinSim='${res.imgId}'; searchByLink(queryObj); return false;"></a>
++				<a href="#" class="isAdvanced" title="semantic similarity"><img loading="${img_loading}" style="padding: 2px;" src="img/aladinSim.svg" width=20 title="semantic similarity" alt="${res.imgId}" id="aladinSim${res.imgId}" onclick="var queryObj=new Object(); queryObj.aladinSim='${res.imgId}'; searchByLink(queryObj); return false;"></a>
+ 				<a href="#" class="isAdvanced" title="semantic video  similarity"><img loading="${img_loading}" style="padding: 2px;" src="img/clipSim.svg" width=20 title="semantic video  similarity" alt="${res.imgId}" id="clipSim${res.imgId}" onclick="var queryObj=new Object(); queryObj.clipSim='${res.imgId}'; searchByLink(queryObj); return false;"></a>
+ 
++				<button class="sq-grid-add-btn" data-imgid="${res.imgId}" onclick='SubmissionQueue.toggleGridItem("${res.imgId}", "${res.videoId}", ${fIdx}, "${res.thumb}", "${res.keyframe}", "${res.score}"); event.stopPropagation(); return false;' title="Thêm/Bỏ khỏi Hàng chờ nộp bài">
++					<i class="fas fa-plus"></i> Queue
++				</button>
++
+ 				<a href="#" title="Submit result"><span class="pull-right"><i id="submitBTN_${res.imgId}" title="Submit result" class="fa fa-arrow-alt-circle-up font-huge" style="color:#00AA00; padding-left: 0px;" onclick='submitVersion2(${jsonString});'> </i></span></a>
+-			<div>
++			</div>
+ 		</div>
+ 		`
+ 
+@@ -2288,7 +2306,7 @@ async function init() {
+ 									""));
+ 					var textQuery = $("#textual0").val();
+ 					if (textQuery.length > 0) {
+-						if (document.getElementById("isTranslate0").checked)
++						if (document.getElementById("isTranslate0").checked && textualMode[0] !== "metadata")
+ 							translateText(textQuery, 0);
+ 						else {
+ 							queryByTextual();
+@@ -2317,7 +2335,7 @@ async function init() {
+ 									""));
+ 					var textQuery = $("#textual1").val();
+ 					if (textQuery.length > 0) {
+-						if (document.getElementById("isTranslate1").checked)
++						if (document.getElementById("isTranslate1").checked && textualMode[1] !== "metadata")
+ 							translateText(textQuery, 1);
+ 						else {
+ 							queryByTextual();

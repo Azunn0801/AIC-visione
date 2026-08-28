@@ -1,0 +1,26 @@
+# Large Media & Cache Folders (Do not track in git)
+selected-frames/
+resized-videos/
+thumbnails/
+videos/
+features-clip-openai/
+backup-before-full/
+*.log
+
+# Large Index Binaries (>100MB, rebuild via Docker or transfer via Drive)
+faiss-index_clip-openai.faiss
+lucene-index/
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv*/
+.env
+
+# System & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
