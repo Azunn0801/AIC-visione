@@ -9,10 +9,20 @@ videos/
 features-*/
 backup-before-full/
 *.log
+logs*/
 
 # Large Binaries exceeding GitHub 100MB limit (rebuild via Docker in 30s)
 faiss-index_*.faiss
 lucene-index/
+
+# ==============================================================================
+# SUBMISSIONS & RUNTIME OUTPUTS
+# ==============================================================================
+submissions*/
+*.zip
+*_RAW.json
+*_RESULTS.json
+*_HITS.json
 
 # ==============================================================================
 # PYTHON & ENVIRONMENT
